@@ -2,15 +2,18 @@ from torchvision import io, transforms
 from transformers import Seq2SeqTrainer ,Seq2SeqTrainingArguments
 from transformers import default_data_collator
 
-from config import Config, MOEConfig
-from utils import compute_metrics, util
+import sys
+sys.path.append('../')
+from config.config import Config, MOEConfig
+from utils import util, compute_metrics
 from dataset.flickr8k import load_data, ImgDataset
 from model.moe_model import VisionEncoderDecoderMoE
 import wandb
 
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 config = Config()
 moe_config = MOEConfig()
@@ -18,23 +21,22 @@ moe_config = MOEConfig()
 transform = transforms.Compose(
     [
         transforms.Resize(config.IMG_SIZE), 
-        transforms.ToTensor(),
-        transforms.Normalize(
-            mean=0.5, 
-            std=0.5
-        )
+        transforms.ToTensor()
    ]
 )
 
 feature_extractor, tokenizer, model = util.load_pretrained(config)
+logger.debug('Loaded Pretrained !')
 
-train_df, val_df = load_data(data_path = '')
-train_dataset = ImgDataset(train_df, root_dir = "/kaggle/input/flickr8k/Images",tokenizer=tokenizer,feature_extractor = feature_extractor ,transform = transform)
-val_dataset = ImgDataset(val_df , root_dir = "/kaggle/input/flickr8k/Images",tokenizer=tokenizer,feature_extractor = feature_extractor , transform  = transform)
+train_df, val_df = load_data(data_path = '../data/Flickr8k.token.txt')
+train_dataset = ImgDataset(train_df, root_dir = "../data/Flicker8k_Dataset",tokenizer=tokenizer,feature_extractor = feature_extractor ,transform = transform)
+val_dataset = ImgDataset(val_df , root_dir = "./data/Flicker8k_Dataset",tokenizer=tokenizer,feature_extractor = feature_extractor , transform  = transform)
+logger.debug('Loaded Dataset !')
+logger.debug(f'Train data: {train_df.shape} Val data: {val_df.shape}')
 
 vl_model = VisionEncoderDecoderMoE(model, moe_config)
 model = vl_model.model
-logging.debug(f'Decoder Model {model.decoder}')
+logger.debug(f'Decoder Model {model.decoder}')
 
 #update model parameters
 model.config.decoder_start_token_id = tokenizer.cls_token_id

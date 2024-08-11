@@ -10,9 +10,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def load_data(data_path):
-    df=  pd.read_csv(data_path)
+    # df=  pd.read_csv(data_path)
+    df = pd.read_csv(data_path, sep="\t", header=None, names=["image_caption", "caption"])
+    df[['image', 'caption_number']] = df['image_caption'].str.split('#', expand=True)
+    df = df.drop(columns=['image_caption'])
+    df = df[['image', 'caption_number', 'caption']]
+    logger.info(df.head())
     train_df , val_df = train_test_split(df , test_size = 0.05)
-    logger.debug(f'Train data: {train_df.shape} Val data: {val_df.shape}')
     return train_df, val_df
     
 class ImgDataset(Dataset):

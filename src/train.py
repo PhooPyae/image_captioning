@@ -5,7 +5,7 @@ from transformers import default_data_collator
 import sys
 sys.path.append('../')
 from config.config import Config, MOEConfig
-from utils import util, compute_metrics
+from utils import metrics, util
 from dataset.flickr8k import load_data, ImgDataset
 from model.moe_model import VisionEncoderDecoderMoE
 import wandb
@@ -21,7 +21,11 @@ moe_config = MOEConfig()
 transform = transforms.Compose(
     [
         transforms.Resize(config.IMG_SIZE), 
-        transforms.ToTensor()
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=0.5, 
+            std=0.5
+        )
    ]
 )
 
@@ -33,7 +37,7 @@ train_dataset = ImgDataset(train_df, root_dir = "../data/Flicker8k_Dataset",toke
 val_dataset = ImgDataset(val_df , root_dir = "./data/Flicker8k_Dataset",tokenizer=tokenizer,feature_extractor = feature_extractor , transform  = transform)
 logger.debug('Loaded Dataset !')
 logger.debug(f'Train data: {train_df.shape} Val data: {val_df.shape}')
-
+logger.debug(train_dataset.__getitem__(0))
 vl_model = VisionEncoderDecoderMoE(model, moe_config)
 model = vl_model.model
 logger.debug(f'Decoder Model {model.decoder}')
@@ -52,7 +56,8 @@ model.config.no_repeat_ngram_size = 3
 model.config.length_penalty = 2.0
 model.config.num_beams = 4
 
-util.compute_parameters(model)
+total_params, trainable_params = util.compute_parameters(model)
+metrics = metrics.Metrics(tokenizer)
 
 wandb.init(
     project="image_captioning_vit_gpt2",
@@ -71,8 +76,11 @@ wandb.init(
         "num_workers": config.NUM_WORKERS,
         "img_size": config.IMG_SIZE,
         "label_mask": config.LABEL_MASK,
-        "top_k": moe_config.n_expert_per_token,
-        "num_experts": moe_config.n_expert
+        "top_k_experts": moe_config.n_expert_per_token,
+        "num_experts": moe_config.n_expert,
+        "trainable_params": trainable_params,
+        "total_params": total_params
+
     }
 )
 
@@ -100,7 +108,7 @@ trainer = Seq2SeqTrainer(
     tokenizer=feature_extractor,
     model=model,
     args=training_args,
-    compute_metrics=compute_metrics,
+    compute_metrics=metrics.compute_metrics,
     train_dataset=train_dataset,
     eval_dataset=val_dataset,
     data_collator=default_data_collator,

@@ -1,1 +1,6 @@
 data
+wandb
+VIT_*
+*.ipynb
+*.csv
+.DS_Store

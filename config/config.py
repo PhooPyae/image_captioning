@@ -30,4 +30,5 @@ class MOEConfig:
     n_expert_per_token: int = 4
     intermediate_size: int = 3072 // 8
     bias: bool = True
+    dropout: float = 0.5
     

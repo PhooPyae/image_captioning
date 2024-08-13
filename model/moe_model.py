@@ -7,7 +7,7 @@ class LLaMAMLP(nn.Module):
         super().__init__()
         self.fc = nn.Linear(config.n_embd, config.intermediate_size, bias=config.bias)
         self.proj = nn.Linear(config.intermediate_size, config.n_embd, bias=config.bias)
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout(config.dropout)
 
         self.config = config
 
@@ -45,6 +45,7 @@ class LLaMAMoE(nn.Module):
 class VisionEncoderDecoderMoE():
     def __init__(self, model, config: dict) -> None:
         self.model = model
+        self.intermediate_size = config.intermediate_size
         self.moe_layers = nn.ModuleList(LLaMAMoE(config) for _ in range(model.config.decoder.n_layer))
         self.update_weight()
         self.add_custom_layer()
@@ -56,8 +57,8 @@ class VisionEncoderDecoderMoE():
                 source_weights =self. model.decoder.transformer.h[i].mlp.c_fc.weight
 
                 # Reshaping the weights to the desired shape
-                start = 0 + (j * 384)
-                end = 384 * (j + 1)
+                start = 0 + (j * self.intermediate_size)
+                end = self.intermediate_size * (j + 1)
                 
                 reshaped_weights = source_weights.view(3072, -1)[start:end,]
 

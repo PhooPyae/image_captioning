@@ -14,6 +14,7 @@ def load_pretrained(config):
     tokenizer.pad_token = tokenizer.unk_token
 
     model = VisionEncoderDecoderModel.from_encoder_decoder_pretrained(config.ENCODER, config.DECODER)
+    model.to(config.device)
     
     return feature_extractor, tokenizer, model
 

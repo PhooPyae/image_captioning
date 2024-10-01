@@ -1,11 +1,39 @@
+import pandas as pd
+from tokenizer import Vocabulary
+from PIL import Image
+from torch.nn.utils.rnn import pad_sequence
+import torch
+from torch.utils.data import DataLoader, Dataset
+
 class FlickrDataset(Dataset):
     def __init__(self, root_dir, captions_file, transform = None, freq_threshold = 5):
         self.root_dir = root_dir
-        df = pd.read_csv(captions_file)
+        # df = pd.read_csv(captions_file)
+        df = pd.read_csv(captions_file, sep="\t", header=None, names=["image_caption", "caption"])
+    
+        # Split the 'image_caption' column into 'image' and 'caption_number'
+        df[['image', 'caption_number']] = df['image_caption'].str.split('#', expand=True)
+        df = df.drop(columns=['image_caption'])
+        self.df = df[['image', 'caption_number', 'caption']]
         
-        df['image'] = df['image_name']
-        df['caption'] = df['comment']
-        self.df = df.loc[:,['image', 'caption']]
+        # Group by image and sample two captions per image
+        # df_sampled = df.groupby('image').apply(lambda x: x.sample(min(5, len(x)))).reset_index(drop=True)
+        
+        # # Split data by unique images (ensuring no overlap in images between train and validation)
+        # unique_images = df_sampled['image'].unique()
+        # train_images, val_images = train_test_split(unique_images, test_size=0.2, random_state=42)
+        
+        # # Create training and validation dataframes by selecting based on image
+        # train_df = df_sampled[df_sampled['image'].isin(train_images)]
+        # val_df = df_sampled[df_sampled['image'].isin(val_images)]
+        
+        # # Shuffle the training and validation datasets
+        # train_df = train_df.sample(frac=1, random_state=42).reset_index(drop=True)
+        # val_df = val_df.sample(frac=1, random_state=42).reset_index(drop=True)
+        
+        # df['image'] = df['image_name']
+        # df['caption'] = df['comment']
+        # self.df = df.loc[:,['image', 'caption']]
         
         self.transform = transform
     
@@ -23,7 +51,7 @@ class FlickrDataset(Dataset):
         caption = self.captions[idx]
 #         print(caption)
         img_id = self.images[idx]
-        image = Image.open('/kaggle/input/flickr30k/flickr30k_images/'+img_id).convert("RGB")
+        image = Image.open('/projects/bdfr/plinn/image_captioning/data/Flicker8k_Dataset/'+img_id).convert("RGB")
         
         if self.transform is not None:
             image = self.transform(image)
@@ -31,10 +59,7 @@ class FlickrDataset(Dataset):
         tokenized_caption = [self.vocab.string_to_index["<SOS>"]]
         tokenized_caption += self.vocab.tokenize(caption)
         tokenized_caption.append(self.vocab.string_to_index["<EOS>"])
-#         print(tokenized_caption)
-#         print('--------------')
-#         print()
-        
+
         return image, torch.tensor(tokenized_caption)
     
 class MyCollate:

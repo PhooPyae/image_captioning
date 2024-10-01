@@ -1,3 +1,10 @@
+import torch
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import DataLoader, Dataset
+import numpy as np
+from dataset import MyCollate
+from PIL import Image
+
 def get_loader(
     dataset,
     batch_size = 32,
@@ -29,7 +36,7 @@ def load_checkpoint(checkpoint, model, optimizer):
     step = checkpoint["step"]
     return step
 
-def print_examples(model, device, dataset, path):
+def print_examples(model, device, dataset, path, transform):
     model.eval()
     for i in range(5):
         idx = np.random.choice(dataset.df.index)

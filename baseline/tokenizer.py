@@ -1,3 +1,6 @@
+import spacy
+
+spacy_eng = spacy.load("en_core_web_sm")
 class Vocabulary:
     def __init__(self, freq_threshold):
         self.index_to_string = {

@@ -1,6 +1,5 @@
 import os
 import pandas as pd
-import spacy
 from PIL import Image
 import wandb
 import numpy as np
@@ -17,6 +16,10 @@ from tqdm import tqdm
 from config import Config
 
 from model import CNNtoRNN
+from dataset import FlickrDataset
+from utils import *
+import sys
+from evaluate import *
 
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -24,77 +27,22 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 config = Config()
-spacy_eng = spacy.load("en_core_web_sm")
+
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
-#     transforms.RandomResizedCrop((299, 299)),
     transforms.ToTensor(),
-    transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 ])
 
-def train():
-    step = 0
-    # Only finetune the CNN
-    for name, param in model.encoderCNN.resnet.named_parameters():
-        if "fc.weight" in name or "fc.bias" in name:
-            param.requires_grad = True
-        else:
-            param.requires_grad = train_CNN
-
-    if load_model:
-        step = load_checkpoint(torch.load("my_checkpoint.pth.tar"), model, optimizer)
-
-    model.train()
-
-    best_loss = float('inf')
-    for epoch in range(num_epochs):
-
-        total_loss = 0
-
-        if save_model:
-            checkpoint = {
-                "state_dict": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "step": step,
-            }
-            save_checkpoint(checkpoint)
-
-        for idx, (imgs, captions) in tqdm(
-            enumerate(dataloader), total=len(dataloader), leave=False
-        ):
-            imgs = imgs.to(device)
-            captions = captions.to(device)
-
-            outputs = model(imgs, captions[:-1])
-    #         print(outputs.shape)
-            loss = criterion(
-                outputs.reshape(-1, outputs.shape[2]), captions.reshape(-1)
-            )
-        
-            total_loss += loss
-            
-            if idx % 100 == 0:
-                print(f'Epoch [{epoch+1}/{num_epochs}], Step [{idx+1}/{len(dataloader)}], Loss: {loss.item():.4f}')
-                wandb.log({"train_loss": loss.item(), "step": step, "epoch": epoch+1, "learning_rate": optimizer.param_groups[0]["lr"]})
-
-            step += 1
-            
-            optimizer.zero_grad()
-            loss.backward(loss)
-            optimizer.step()
-            
-            average_loss = total_loss / len(dataloader)
-    #         print(f'Epoch [{epoch+1}/{num_epochs}]], Loss: {average_loss:.4f}')
-            
-            if average_loss < best_loss:
-                best_loss = average_loss
-                torch.save(model.state_dict(), f'best_model.pth')
+# def train():
+   
     #         else:
     #             print(f'Early stopping | Loss : {best_loss}')
 
 if __name__ == '__main__':
-    dataset = FlickrDataset('/projects/bdfr/plinn/image_captioning/data/Flicker8k_Datasets', captions_file = '/kaggle/input/flickr30k/captions.txt', transform = transform)
+    dataset = FlickrDataset('/projects/bdfr/plinn/image_captioning/data/Flicker8k_Datasets', captions_file = '/projects/bdfr/plinn/image_captioning/data/Flickr8k.token.txt', transform = transform)
+    vocab_size = len(dataset.vocab)
+    print(f'{vocab_size=}')
     dataloader = get_loader(dataset)
 
     logger.debug('Loaded Dataset !')
@@ -113,13 +61,13 @@ if __name__ == '__main__':
         "n_layers": config.num_layers,
         "embed_size": config.embed_size,
         "hidden_size": config.hidden_size,
-        "vocab_size": config.vocab_size
+        "vocab_size": vocab_size
         }
     )
 
-    model = CNNtoRNN(embed_size, hidden_size, vocab_size, num_layers).to(device)
+    model = CNNtoRNN(config.embed_size, config.hidden_size, vocab_size, config.num_layers).to(config.device)
     criterion = nn.CrossEntropyLoss(ignore_index=dataset.vocab.string_to_index["<PAD>"])
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
 
     # Total number of parameters
     total_params = sum(p.numel() for p in model.parameters())
@@ -129,5 +77,68 @@ if __name__ == '__main__':
 
     logger.info(f"Total parameters: {total_params:,}")
     logger.info(f"Trainable parameters: {trainable_params:,}")
+    # sys.exit(1)
 
-    train()
+    step = 0
+    # Only finetune the CNN
+    for name, param in model.encoderCNN.resnet.named_parameters():
+        if "fc.weight" in name or "fc.bias" in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = config.train_CNN
+
+    if config.load_model:
+        step = load_checkpoint(torch.load("my_checkpoint.pth.tar"), model, optimizer)
+
+    model.train()
+
+    best_loss = float('inf')
+    for epoch in range(config.num_epochs):
+
+        total_loss = 0
+
+        if config.save_model:
+            checkpoint = {
+                "state_dict": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "step": step,
+            }
+            save_checkpoint(checkpoint)
+
+        for idx, (imgs, captions) in tqdm(
+            enumerate(dataloader), total=len(dataloader), leave=False
+        ):
+            imgs = imgs.to(config.device)
+            captions = captions.to(config.device)
+
+            outputs = model(imgs, captions[:-1])
+    #         print(outputs.shape)
+            loss = criterion(
+                outputs.reshape(-1, outputs.shape[2]), captions.reshape(-1)
+            )
+        
+            total_loss += loss
+            
+            if idx % 100 == 0:
+                logger.info(f'Epoch [{epoch+1}/{config.num_epochs}], Step [{idx+1}/{len(dataloader)}], Loss: {loss.item():.4f}')
+            
+            if idx % 1000 == 0:
+                caption, generated_caption = evaluate_model(model, dataset, transform)
+                
+                logger.info(f'Ground Truth Caption: {caption}')
+                logger.info(f'Generated Caption: {generated_caption}')
+                model.train()
+                # wandb.log({"train_loss": loss.item(), "step": step, "epoch": epoch+1, "learning_rate": optimizer.param_groups[0]["lr"]})
+
+            step += 1
+            
+            optimizer.zero_grad()
+            loss.backward(loss)
+            optimizer.step()
+            
+            average_loss = total_loss / len(dataloader)
+    #         print(f'Epoch [{epoch+1}/{num_epochs}]], Loss: {average_loss:.4f}')
+            
+            if average_loss < best_loss:
+                best_loss = average_loss
+                torch.save(model.state_dict(), f'best_model.pth')

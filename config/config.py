@@ -3,7 +3,7 @@ import multiprocessing as mp
 
 class Config:
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    ENCODER = "google/vit-large-patch16-224" #google/vit-base-patch16-224
+    ENCODER = "google/vit-base-patch16-224
     DECODER = "gpt2"
     TRAIN_BATCH_SIZE = 128
     VAL_BATCH_SIZE = 128
@@ -17,7 +17,7 @@ class Config:
     STD = (0.229, 0.224, 0.225)
     TRAIN_PCT = 0.95
     NUM_WORKERS = mp.cpu_count()
-    EPOCHS = 1
+    EPOCHS = 2
     IMG_SIZE = (224,224)
     LABEL_MASK = -100
     TOP_K = 1000

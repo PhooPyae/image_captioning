@@ -24,7 +24,6 @@ from evaluate import *
 import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 config = Config()
 
@@ -77,8 +76,8 @@ if __name__ == '__main__':
 
     logger.info(f"Total parameters: {total_params:,}")
     logger.info(f"Trainable parameters: {trainable_params:,}")
-    # sys.exit(1)
-
+    # model = load_state(torch.load('/projects/bdfr/plinn/image_captioning/my_checkpoint.pth.tar'), model)
+    
     step = 0
     # Only finetune the CNN
     for name, param in model.encoderCNN.resnet.named_parameters():
@@ -88,7 +87,7 @@ if __name__ == '__main__':
             param.requires_grad = config.train_CNN
 
     if config.load_model:
-        step = load_checkpoint(torch.load("my_checkpoint.pth.tar"), model, optimizer)
+        step = load_checkpoint(torch.load("/projects/bdfr/plinn/image_captioning/my_checkpoint.pth_epoch100.tar"), model, optimizer)
 
     model.train()
 
@@ -124,11 +123,18 @@ if __name__ == '__main__':
             
             if idx % 1000 == 0:
                 caption, generated_caption = evaluate_model(model, dataset, transform)
-                
-                logger.info(f'Ground Truth Caption: {caption}')
-                logger.info(f'Generated Caption: {generated_caption}')
+                # avg_bleu_score = compute_bleu(model, dataset)
+                # logger.info(f'Average BELU {avg_bleu_score}')
                 model.train()
-                # wandb.log({"train_loss": loss.item(), "step": step, "epoch": epoch+1, "learning_rate": optimizer.param_groups[0]["lr"]})
+                wandb.log(
+                    {
+                        "train_loss": loss.item(), 
+                        "step": step, 
+                        "epoch": epoch+1, 
+                        "learning_rate": optimizer.param_groups[0]["lr"],
+                        # "avg_bleu_score": avg_bleu_score
+                    }
+                )
 
             step += 1
             
@@ -142,3 +148,6 @@ if __name__ == '__main__':
             if average_loss < best_loss:
                 best_loss = average_loss
                 torch.save(model.state_dict(), f'best_model.pth')
+    
+    average_bleu = compute_bleu(model, dataset, is_last=True)
+    logger.info(f'Average BLEU : {average_bleu}')

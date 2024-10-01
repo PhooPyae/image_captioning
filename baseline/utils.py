@@ -5,6 +5,40 @@ import numpy as np
 from dataset import MyCollate
 from PIL import Image
 
+def load_data(data_path):
+    # Read the dataset
+    df = pd.read_csv(data_path, sep="\t", header=None, names=["image_caption", "caption"])
+    
+    # Split the 'image_caption' column into 'image' and 'caption_number'
+    df[['image', 'caption_number']] = df['image_caption'].str.split('#', expand=True)
+    df = df.drop(columns=['image_caption'])
+    df = df[['image', 'caption_number', 'caption']]
+    
+    # Group by image and sample two captions per image
+    df_sampled = df.groupby('image').apply(lambda x: x.sample(min(5, len(x)))).reset_index(drop=True)
+    
+    # Split data by unique images (ensuring no overlap in images between train and validation)
+    unique_images = df_sampled['image'].unique()
+    train_images, val_images = train_test_split(unique_images, test_size=0.2, random_state=42)
+    
+    # Create training and validation dataframes by selecting based on image
+    train_df = df_sampled[df_sampled['image'].isin(train_images)]
+    val_df = df_sampled[df_sampled['image'].isin(val_images)]
+    
+    # Shuffle the training and validation datasets
+    train_df = train_df.sample(frac=1, random_state=42).reset_index(drop=True)
+    val_df = val_df.sample(frac=1, random_state=42).reset_index(drop=True)
+    
+    # Logging for inspection
+    logger.info(f"Train data: {train_df.shape}, Validation data: {val_df.shape}")
+    logger.info(f"Sample of training data: \n{train_df.head()}")
+    
+    # Save train and validation sets to CSV
+    train_df.to_csv('train_df.csv', index=False)
+    val_df.to_csv('val_df.csv', index=False)
+    
+    return train_df, val_df
+
 def get_loader(
     dataset,
     batch_size = 32,
@@ -28,6 +62,11 @@ def save_checkpoint(state, filename="my_checkpoint.pth.tar"):
     print("=> Saving checkpoint")
     torch.save(state, filename)
 
+
+def load_state(checkpoint, model):
+    print("=> Loading checkpoint")
+    model.load_state_dict(checkpoint["state_dict"])
+    return model
 
 def load_checkpoint(checkpoint, model, optimizer):
     print("=> Loading checkpoint")

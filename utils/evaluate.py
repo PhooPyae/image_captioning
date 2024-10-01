@@ -5,6 +5,7 @@ import sys
 import pandas as pd
 from datasets import load_metric
 from tqdm import tqdm
+import numpy as np
 
 sys.path.append('/projects/bdfr/plinn/image_captioning/')
 from config.config import Config
@@ -12,7 +13,7 @@ from config.config import Config
 config = Config()
 
 # Load the saved model
-model_path = '/projects/bdfr/plinn/image_captioning/VIT_large_gpt2_moe'
+model_path = '/projects/bdfr/plinn/image_captioning/VIT_large_gpt2_test'
 model = VisionEncoderDecoderModel.from_pretrained(model_path)
 model = model.to("cuda")
 
@@ -29,8 +30,8 @@ tokenizer.pad_token = tokenizer.unk_token
 
 def generate_caption(image_path):
     # Load the image
-    image = Image.open(image_path)
-    caption = tokenizer.decode(model.generate(feature_extractor(image, return_tensors="pt").pixel_values.to("cuda"), max_length=20)[0])
+    image = Image.open(image_path).convert('RGB')
+    caption = tokenizer.decode(model.generate(feature_extractor(image, return_tensors="pt").pixel_values.to("cuda"), max_length=50)[0])
 
     return caption
 
@@ -55,12 +56,19 @@ rouge_fmeasures = []
 temp = {}
 images = df['image'].unique()
 print(f'total number of images {len(images)}')
-for image in tqdm(images[:30]):
-    generated_caption = generate_caption(dataset_dir +'/'+ image)
-    temp[image] = generated_caption
+images = np.random.choice(images, 5)
+for image_pth in tqdm(images):
+    gt_captions = df[df['image'] == image_pth]['caption']
+    print('GrouthTruth')
+    print(gt_captions)
+    generated_caption = generate_caption(dataset_dir +'/'+ image_pth)
+    print('Generated')
+    print(generated_caption)
+    print('-----------')
+    # temp[image] = generated_caption
 
-print(f'total number of caption {len(temp)}')
-print(temp)
+# print(f'total number of caption {len(temp)}')
+# print(temp)
 
 # for index, row in tqdm(df.iterrows()):
 #     image_path = row['image']

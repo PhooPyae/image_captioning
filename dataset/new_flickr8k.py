@@ -2,9 +2,9 @@ import os
 import pandas as pd
 from PIL import Image
 from sklearn.model_selection import train_test_split
-import random
 import torch
 from torch.utils.data import Dataset
+import random
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -60,7 +60,7 @@ class ImgDataset(Dataset):
     def __getitem__(self,idx):
         image_id = self.df['image'].unique()[idx]
         captions = self.df[self.df['image'] == image_id]['caption'].tolist()
-
+        
         if self.is_train:
             caption = random.choice(captions)
         else:
@@ -69,38 +69,36 @@ class ImgDataset(Dataset):
         img_path = os.path.join(self.root_dir , image_id)
         img = Image.open(img_path).convert("RGB")
     
-        
         if self.transform:
             img= self.transform(img)
 
-        pixel_values = self.feature_extractor(img, return_tensors="pt").pixel_values
-        
+        pixel_values = self.feature_extractor(img, return_tensors="pt").pixel_values.squeeze()
+
         if self.is_train:
-            tokenized_caption = self.tokenizer(caption.lower(),
-                                    padding='max_length',
-                                    max_length=self.max_length,
-                                    truncation=True,
-                                    return_tensors='pt').input_ids.squeeze()
+            tokenized_caption = self.tokenizer(
+                caption.lower(),
+                padding='max_length',
+                max_length=self.max_length,
+                truncation=True,
+                return_tensors='pt'
+            ).input_ids.squeeze()
+
             labels = torch.where(tokenized_caption == self.tokenizer.pad_token_id, torch.tensor(-100), tokenized_caption)
             return {
-                "pixel_values": pixel_values.squeeze(), 
+                "pixel_values": pixel_values, 
                 "labels": labels
                 }
         else:
-            labels = []
-            for c in caption:
-                tokenized_caption = self.tokenizer(c.lower(),
-                                    padding='max_length',
-                                    max_length=self.max_length,
-                                    truncation=True,
-                                    return_tensors='pt').input_ids.squeeze()
-                
-                label = torch.where(tokenized_caption == self.tokenizer.pad_token_id, torch.tensor(-100), tokenized_caption)
-                labels.append(label)
+            tokenized_captions = [
+                self.tokenizer(c.lower(), padding="max_length", truncation=True, max_length=self.max_length).input_ids
+                for c in caption
+            ]
             return {
                     "pixel_values": pixel_values.squeeze(),
-                    "labels": labels
+                    "labels": tokenized_captions
                 }
     
 if __name__ == '__main__':
     train_df, val_df = load_data_shuffle(data_path = '/projects/bdfr/plinn/image_captioning/data/Flickr8k.token.txt')
+    train_dataset = ImgDataset(train_df, root_dir = "/projects/bdfr/plinn/image_captioning/data/Flicker8k_Dataset",tokenizer=tokenizer,feature_extractor = feature_extractor ,transform = transform)
+    logger.info(train_dataset.__getitem__(0))

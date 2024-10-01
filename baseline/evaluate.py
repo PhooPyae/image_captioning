@@ -1,12 +1,23 @@
 import os
 import numpy as np
 from PIL import Image
+from model import CNNtoRNN
 from config import Config
 import torch 
+from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
+from dataset import FlickrDataset
+import torchvision.transforms as transforms
+from utils import *
+from pycocoevalcap.cider.cider import Cider
+from tqdm import tqdm
+
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 config = Config()
 
-def generate(self, model, image, vocabulary, max_length=50):
+def generate(model, image, vocabulary, max_length=50):
     result_caption = []
 
     with torch.no_grad():
@@ -30,37 +41,138 @@ def evaluate_model(model, dataset, transform):
     df = dataset.df
     model.eval()
     img_dir = '/projects/bdfr/plinn/image_captioning/data/Flicker8k_Dataset'
-    files = os.listdir(img_dir)
-    images = np.random.choice(files, 5)
+    images = os.listdir(img_dir)
+    # images = np.random.choice(files, 1)
     for img in images:
         caption = df[df['image'] == img]['caption'].values
         image = Image.open(img_dir+"/"+img).convert("RGB")
         transformed_image = transform(image).unsqueeze(0)
         generated_caption = " ".join(generate(model, transformed_image.to(config.device), dataset.vocab))
-        return caption, generated_caption
+        logger.info(f'Ground Truth Caption: {caption}')
+        logger.info(f'Generated Caption: {generated_caption}')
+       
+    return caption, generated_caption
         
-def compute_ble(dataset):
-    for image, tokenized_caption in tqdm(dataset):
-    # Generate the caption using your model
-    generated_caption = " ".join(generate(model, image.unsqueeze(0).to(device), dataset.vocab))
+def decode(token_indices, vocab):
+        """
+        Convert a list of token indices into a string of words.
+        
+        Args:
+            token_indices (list): List of token indices to convert.
+        
+        Returns:
+            str: The decoded sentence.
+        """
+        words = []
+        for index in token_indices:
+            word = vocab.index_to_string.get(index, "<UNK>")
+#             if word == "<EOS>":
+#                 break
+            words.append(word)
+        
+        return ' '.join(words)
     
-    # Decode the actual (reference) caption
-    reference_caption = decode(tokenized_caption.tolist(), dataset.vocab)
-    
-    # Tokenize the generated and reference captions
-    reference_tokens = [token for token in reference_caption.split() if token not in ["<SOS>", "<EOS>"]]
-    generated_tokens = [token for token in generated_caption.split() if token not in ["<SOS>", "<EOS>"]]
-#     print(reference_tokens)
-#     print(generated_tokens)
-    
-    # Calculate the BLEU score
-    bleu_score += sentence_bleu([reference_tokens], generated_tokens)
-    
-    # Print the captions and the BLEU score
-    print("Reference Caption:", reference_caption)
-    print("Generated Caption:", generated_caption)
-    print("BLEU Score:", bleu_score)
-    avg_bleu_score = bleu_score / dataset.__len__()
-    print(f'Average BELU {avg_bleu_score}')
+def compute_bleu(model, dataset, is_last=False):
+    bleu_score = 0
+    if is_last:
+        for image, tokenized_caption in dataset:
+            generated_caption = " ".join(generate(model, image.unsqueeze(0).to(config.device), dataset.vocab))
+        
+            # Decode the actual (reference) caption
+            reference_caption = decode(tokenized_caption.tolist(), dataset.vocab)
+            
+            # Tokenize the generated and reference captions
+            reference_tokens = [token for token in reference_caption.split() if token not in ["<SOS>", "<EOS>"]]
+            generated_tokens = [token for token in generated_caption.split() if token not in ["<SOS>", "<EOS>"]]
+        #     print(reference_tokens)
+        #     print(generated_tokens)
+        
+            # Calculate the BLEU score
+            bleu_score += sentence_bleu([reference_tokens], generated_tokens)
+            logger.info(f"Reference Caption: {reference_caption}")
+            logger.info(f"Generated Caption: {generated_caption}")
+            logger.info(f"BLEU Score: {bleu_score}")
+            
+        return bleu_score / dataset.__len__() 
+        
+    else:
+        indices = np.random.randint(len(dataset), size=5)
+        for i in indices:
+            image, tokenized_caption = dataset.__getitem__(i)
+            # Generate the caption using your model
+            generated_caption = " ".join(generate(model, image.unsqueeze(0).to(config.device), dataset.vocab))
+            
+            # Decode the actual (reference) caption
+            reference_caption = decode(tokenized_caption.tolist(), dataset.vocab)
+            
+            # Tokenize the generated and reference captions
+            reference_tokens = [token for token in reference_caption.split() if token not in ["<SOS>", "<EOS>"]]
+            generated_tokens = [token for token in generated_caption.split() if token not in ["<SOS>", "<EOS>"]]
+        #     print(reference_tokens)
+        #     print(generated_tokens)
+            
+            # Calculate the BLEU score
+            bleu_score += sentence_bleu([reference_tokens], generated_tokens)
+            
+            # Print the captions and the BLEU score
+            logger.info(f"Reference Caption: {reference_caption}")
+            logger.info(f"Generated Caption: {generated_caption}")
+            logger.info(f"BLEU Score: {bleu_score}")
+
+        avg_bleu_score = bleu_score / dataset.__len__()
+        return avg_bleu_score
     
     # Optional: break after the first example
+
+if __name__ == '__main__':
+    transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    ])
+    
+    dataset = FlickrDataset('/projects/bdfr/plinn/image_captioning/data/Flicker8k_Datasets', captions_file = '/projects/bdfr/plinn/image_captioning/data/Flickr8k.token.txt', transform = transform)
+    vocab_size = len(dataset.vocab)
+    model = CNNtoRNN(config.embed_size, config.hidden_size, vocab_size, config.num_layers).to(config.device)
+    model = load_state(torch.load('/projects/bdfr/plinn/image_captioning/my_checkpoint.pth_epoch50.tar'), model)
+    # avg_bleu_score = compute_bleu(model, dataset, is_last=True)
+    # print(f'Avreage bleu score {avg_bleu_score}')
+    # evaluate_model(model, dataset, transform)
+    bleu = []
+    df = dataset.df
+    model.eval()
+    img_dir = '/projects/bdfr/plinn/image_captioning/data/Flicker8k_Dataset'
+    images = os.listdir(img_dir)
+    # images = np.random.choice(files, 1)
+    for img in tqdm(images):
+        captions = df[df['image'] == img]['caption'].values
+        image = Image.open(img_dir+"/"+img).convert("RGB")
+        transformed_image = transform(image).unsqueeze(0)
+        generated_caption = " ".join(generate(model, transformed_image.to(config.device), dataset.vocab))
+        # logger.info(f'Ground Truth Caption: {captions}')
+        # logger.info(f'Generated Caption: {generated_caption}')
+        bleu_score = 0
+        # for reference_caption in captions:
+        
+            # reference_caption = decode(tokenized_caption.tolist(), dataset.vocab)
+                
+            # Tokenize the generated and reference captions
+        reference_tokens = []
+        for caption in captions:
+            reference_tokens.append([token for token in caption.split() if token not in ["<SOS>", "<EOS>"]])
+            
+        generated_tokens = [token for token in generated_caption.split() if token not in ["<SOS>", "<EOS>"]]
+        print(reference_tokens)
+        print(generated_tokens)
+        break
+            
+            # Calculate the BLEU score
+        # bleu_score += sentence_bleu([reference_tokens], generated_tokens)
+        # # logger.info(f"BLEU Score: {bleu_score:.4f}")
+        # bleu.append(bleu_score)
+        
+        # Print the captions and the BLEU score
+            # logger.info(f"Reference Caption: {reference_caption}")
+            # logger.info(f"Generated Caption: {generated_caption}")
+        # logger.info('----------------')
+    # avg_bleu_score = bleu_score / dataset.__len__()
+    # logger.info(f'Average BLEU score {np.mean(bleu):.4f}')

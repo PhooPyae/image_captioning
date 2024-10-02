@@ -1,0 +1,47 @@
+# Gymnasium RL Training Container with PyTorch
+# ======================================
+
+# Header
+# ------
+Bootstrap: docker
+From: ubuntu:22.04
+
+# Metadata
+# --------
+%labels
+    Maintainer Lin
+    Version 1.0
+    Description Gymnasium RL Training Container with PyTorch
+
+# Install dependencies
+%post
+    apt-get update && apt-get install -y \
+        python3-pip \
+        python3-dev \
+        libblas-dev \
+        liblapack-dev \
+        libatlas-base-dev \
+        gfortran \
+        wget \
+        && rm -rf /var/lib/apt/lists/*
+
+# Install PyTorch
+%post
+    pip install torchvision --index-url https://download.pytorch.org/whl/cu124
+    pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
+    pip install numpy
+    pip install spacy
+    python3 -m spacy download en_core_web_sm
+    pip install pandas==1.5.3
+    pip install transformers~=4.30.2
+    pip install datasets~=2.13.0
+    pip install tqdm~=4.65.0
+    pip install scikit-learn~=1.2.2
+    pip install accelerate
+    pip install rouge_score
+    pip install deep-phonemizer
+    pip install Pillow
+    pip install matplotlib
+    pip install wandb
+    pip install nltk
+    pip install pycocoevalcap

@@ -13,4 +13,10 @@ class Config:
     # vocab_size = len(dataset.vocab)
     num_layers = 3
     learning_rate = 3e-4
-    num_epochs = 10
+    num_epochs = 100
+
+class CocoConfig:
+    ann_root = '/projects/bdfr/plinn/image_captioning/baseline/coco'
+    train = 'coco_karpathy_train.json'
+    val = 'coco_karpathy_val.json'
+    test = 'coco_karpathy_test.json'

@@ -55,10 +55,10 @@ class DecoderRNN(nn.Module):
 
 
 class CNNtoRNN(nn.Module):
-    def __init__(self, embed_size, hidden_size, vocab_size, num_layers):
+    def __init__(self, embed_size, hidden_size, vocab_size, num_layers, device):
         super(CNNtoRNN, self).__init__()
-        self.encoderCNN = EncoderCNN(embed_size)
-        self.decoderRNN = DecoderRNN(embed_size, hidden_size, vocab_size, num_layers)
+        self.encoderCNN = EncoderCNN(embed_size).to(device)
+        self.decoderRNN = DecoderRNN(embed_size, hidden_size, vocab_size, num_layers).to(device)
 
     def forward(self, images, captions):
 #         print('>>>>> CNN to RNN <<<<<<')

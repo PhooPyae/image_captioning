@@ -36,6 +36,7 @@ transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
+logger.info(f'Using {config.device}')
 if __name__ == '__main__':
     # Prepare tokenizer for all captions [train, val, test]
     # uncomment only for the first run
@@ -47,15 +48,15 @@ if __name__ == '__main__':
     # preparation.save_tokens()
     
     vocab = Vocabulary(freq_threshold=5)
-    vocab.index_to_string = json.load(open('/projects/bdfr/plinn/image_captioning/index_to_string.json','r'))
-    vocab.string_to_index = json.load(open('/projects/bdfr/plinn/image_captioning/string_to_index.json','r'))
+    vocab.index_to_string = json.load(open('/projects/bdfr/plinn/image_captioning/tokenizer/index_to_string.json','r'))
+    vocab.string_to_index = json.load(open('/projects/bdfr/plinn/image_captioning/tokenizer/string_to_index.json','r'))
     
-    coco_train_dataset = coco_karpathy_train(transform, coco_config.ann_root, vocab, max_words=50, prompt='this image shows ')
-    coco_val_dataset = coco_karpathy_caption_eval(transform, coco_config.ann_root, split='val', prompt='this image shows ')
+    coco_train_dataset = coco_karpathy_train(coco_config.ann_root, coco_config.image_root, vocab, max_words=50, prompt='this image shows ', transform=transform)
+    coco_val_dataset = coco_karpathy_caption_eval(coco_config.ann_root, coco_config.image_root, split='val', prompt='this image shows ', transform=transform)
     
     vocab_size = vocab.__len__()
     print(f'{vocab_size=}')
-    dataloader = get_loader(coco_train_dataset)
+    dataloader = get_loader(coco_train_dataset, batch_size = config.batch_size)
 
     logger.info('Loaded Dataset !')
     logger.info(f'Train data: {coco_train_dataset.__len__()}')
@@ -65,7 +66,7 @@ if __name__ == '__main__':
         config={
         "learning_rate": config.learning_rate,
         "epochs": config.num_epochs,
-        "batch_size": 32,
+        "batch_size": config.batch_size,
         "optimizer": "Adam",
         "image_encoder": "ResNet50",
         "text_decoder": "RNN",
@@ -76,7 +77,7 @@ if __name__ == '__main__':
         }
     )
 
-    model = CNNtoRNN(config.embed_size, config.hidden_size, vocab_size, config.num_layers).to(config.device)
+    model = CNNtoRNN(config.embed_size, config.hidden_size, vocab_size, config.num_layers, config.device).to(config.device)
     criterion = nn.CrossEntropyLoss(ignore_index=vocab.string_to_index["<PAD>"])
     optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
 
@@ -121,8 +122,6 @@ if __name__ == '__main__':
         ):
             imgs = imgs.to(config.device)
             captions = captions.to(config.device)
-            print(imgs.shape)
-            print(captions.shape)
 
             outputs = model(imgs, captions[:-1])
     #         print(outputs.shape)

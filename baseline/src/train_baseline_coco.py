@@ -1,9 +1,13 @@
+import sys
+sys.path.append('/projects/bdfr/plinn/image_captioning/baseline')
+
 import os
 import pandas as pd
 from PIL import Image
 import wandb
 import numpy as np
 import json
+from tqdm import tqdm
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -13,16 +17,15 @@ import torchvision.models as models
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
-from tqdm import tqdm
-from config import Config, CocoConfig
 
-from tokenizer import Vocabulary
-from model import CNNtoRNN
-from coco_karpathy_dataset import coco_karpathy_train, coco_karpathy_caption_eval
-from utils import *
-import sys
-from evaluate import *
-from create_vocab import DataPreparation
+from config.config import Config, CocoConfig
+from utils.tokenizer import Vocabulary
+from model.CNN_RNN import CNNtoRNN
+from model.CNN_Transformer import CNNtoTransformer
+from dataset.coco_karpathy_dataset import coco_karpathy_train, coco_karpathy_caption_eval
+from utils.util import *
+from utils.evaluate import *
+from utils.create_vocab import DataPreparation
 
 import logging
 logging.basicConfig(level=logging.DEBUG)

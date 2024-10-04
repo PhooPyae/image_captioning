@@ -1,9 +1,12 @@
-import pandas as pd
-from tokenizer import Vocabulary
-from PIL import Image
-from torch.nn.utils.rnn import pad_sequence
+import sys
+sys.path.append('/projects/bdfr/plinn/image_captioning/baseline')
 import torch
 from torch.utils.data import DataLoader, Dataset
+from torch.nn.utils.rnn import pad_sequence
+
+import pandas as pd
+from PIL import Image
+from utils.tokenizer import Vocabulary
 
 class FlickrDataset(Dataset):
     def __init__(self, root_dir, captions_file, transform = None, freq_threshold = 5):

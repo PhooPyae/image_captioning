@@ -1,15 +1,18 @@
-import os
-import json
+import sys
+sys.path.append('/projects/bdfr/plinn/image_captioning/baseline')
 
-from torch.utils.data import Dataset
-from torchvision.datasets.utils import download_url
+import os
 import requests
 from PIL import Image
 from io import BytesIO
 import random
 import numpy as np
-from utils import pre_caption
+import json
+
 import torch
+from torch.utils.data import Dataset
+from torchvision.datasets.utils import download_url
+from utils.util import pre_caption
 
 class coco_karpathy_train(Dataset):
     def __init__(self, ann_root, image_root, vocab, max_words=30, prompt='', transform=None):        

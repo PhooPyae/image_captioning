@@ -1,8 +1,12 @@
+import sys
+sys.path.append('/projects/bdfr/plinn/image_captioning/baseline')
+
 import os
 import pandas as pd
 from PIL import Image
 import wandb
 import numpy as np
+from tqdm import tqdm
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -12,14 +16,12 @@ import torchvision.models as models
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
-from tqdm import tqdm
-from config import Config
 
-from model import CNNtoRNN
-from dataset import FlickrDataset
-from utils import *
-import sys
-from evaluate import *
+from config.config import Config
+from model.CNN_RNN import CNNtoRNN
+from dataset.flickr8k import FlickrDataset
+from utils.util import *
+from utils.evaluate import *
 
 import logging
 logging.basicConfig(level=logging.DEBUG)

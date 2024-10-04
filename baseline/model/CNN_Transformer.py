@@ -31,19 +31,54 @@ class EncoderCNN(nn.Module):
 #         print(f'after self.embed {features.shape}')
         return self.dropout(self.relu(features))
 
-class Transformer(nn.Module):
-    
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len):
+        super(PositionalEncoding, self).__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
 
-class CNNtoRNN(nn.Module):
-    def __init__(self, embed_size, hidden_size, vocab_size, num_layers):
-        super(CNNtoRNN, self).__init__()
-        self.encoderCNN = EncoderCNN(embed_size)
-        self.decoderRNN = DecoderRNN(embed_size, hidden_size, vocab_size, num_layers)
+    def forward(self, x):
+        x = x + self.pe[:, :x.size(1), :]
+        return x
+    
+class DecoderTransformer(nn.Module):
+    def __init__(self, embed_size, hidden_size, vocab_size, num_layers, num_heads, max_length, device):
+        super(DecoderTransformer, self).__init__()
+        self.embed = nn.Embedding(vocab_size, embed_size)
+        self.pos_encoder = PositionalEncoding(embed_size, max_length)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=num_heads, dim_feedforward=hidden_size, dropout=0.5)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.linear = nn.Linear(hidden_size, vocab_size)
+        self.dropout = nn.Dropout(0.5)
+        self.device = device
+        
+    def forward(self, features, captions):
+        B, T = captions.shape
+        pos_mask = torch.triu(torch.ones((T, T)), diagonal=1).bool().to(self.device)
+        embeddings = self.dropout(self.embed(captions))
+        embeddings = self.pos_encoder(embeddings)
+        embeddings = torch.cat((features.unsqueeze(0), embeddings), dim=0)
+        
+        outputs = self.transformer(embeddings, src_mask=pos_mask)
+        outputs = self.linear(outputs)
+        return outputs
+        
+        
+class CNNtoTransformer(nn.Module):
+    def __init__(self, embed_size, hidden_size, vocab_size, num_layers, num_heads, max_length, device):
+        super(CNNtoTransformer, self).__init__()
+        self.encoderCNN = EncoderCNN(embed_size).to(device)
+        self.decoderTransformer = DecoderTransformer(embed_size, hidden_size, vocab_size, num_layers, num_heads, max_length, device)
 
     def forward(self, images, captions):
-#         print('>>>>> CNN to RNN <<<<<<')
+#         print('>>>>> CNN to Transformer <<<<<<')
         features = self.encoderCNN(images)
-        outputs = self.decoderRNN(features, captions)
+        outputs = self.decoderTransformer(features, captions)
         return outputs
 
     def caption_image(self, image, vocabulary, max_length=50):
@@ -51,15 +86,16 @@ class CNNtoRNN(nn.Module):
 
         with torch.no_grad():
             x = self.encoderCNN(image).unsqueeze(0)
-            states = None
+            x = x.unsqueeze(0)
+
+            input_ids = torch.tensor([[vocabulary.string_to_index["<SOS>"]]]).to(image.device)
 
             for _ in range(max_length):
-                hiddens, states = self.decoderRNN.lstm(x, states)
-                output = self.decoderRNN.linear(hiddens.squeeze(0))
-                predicted = output.argmax(1)
+                outputs = self.decoderTransformer(x, input_ids)
+                predicted = outputs[:,-1,:].argmax(1)
 #                 print(predicted.shape)
                 result_caption.append(predicted.item())
-                x = self.decoderRNN.embed(predicted).unsqueeze(0)
+                input_ids = torch.cat((input_ids, predicted.unsqueeze(0).unsqueeze(-1)), dim=1)
 
                 if vocabulary.index_to_string[predicted.item()] == "<EOS>":
                     break

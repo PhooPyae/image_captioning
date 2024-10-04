@@ -1,13 +1,10 @@
 import torch
-from torch import nn as nn
+from torch import nn
 from torch.nn import functional as F
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-'''
-Rewrite this transformer from scratch
-'''
 class Head(nn.Module):
     def __init__(self, n_embedding, head_size, max_sequence):
         super().__init__()
@@ -23,10 +20,8 @@ class Head(nn.Module):
         
         k = self.key(x)
         q = self.query(x)
-        matrix = q @ k.transpose(-2, -1) * k.shape[-1] ** -0.5
-        logger.debug(f'{matrix.shape=}')
+        matrix = (q @ k.transpose(-2, -1)) * (k.shape[-1] ** -0.5)
         masked_matrix = matrix.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
-
         after_softmax = F.softmax(masked_matrix, dim=-1)
         after_softmax = self.dropout(after_softmax)
 
@@ -38,86 +33,66 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, n_embedding, n_head, max_sequence):
         super().__init__()
         head_size = n_embedding // n_head
-        self.multiheads = nn.ModuleList([Head(n_embedding, head_size, max_sequence) for _ in range(n_head)])
-        self.proj = nn.Linear(head_size * n_head, n_embedding)
+        self.heads = nn.ModuleList([Head(n_embedding, head_size, max_sequence) for _ in range(n_head)])
+        self.proj = nn.Linear(n_embedding, n_embedding)
         self.dropout = nn.Dropout(0.2)
-    
+
     def forward(self, x):
-        multihead_output = torch.concat([h(x) for h in self.multiheads], dim=-1)
-        logger.debug(f'{multihead_output.shape=}')
-        proj_output = self.proj(multihead_output)
-        logger.debug(f'{proj_output.shape=}')
-        output = self.dropout(proj_output)
-        return output
+        head_outputs = torch.cat([head(x) for head in self.heads], dim=-1)
+        proj_output = self.proj(head_outputs)
+        return self.dropout(proj_output)
 
 class FeedForward(nn.Module):
     def __init__(self, n_embedding):
         super().__init__()
-        
-        self.ffn = nn.Sequential(
-            nn.Linear(n_embedding, 5 * n_embedding),
+        self.net = nn.Sequential(
+            nn.Linear(n_embedding, 4 * n_embedding),  # Expanding
             nn.ReLU(),
-            nn.Linear(5 * n_embedding, n_embedding),
+            nn.Linear(4 * n_embedding, n_embedding),  # Projecting back to original size
             nn.Dropout(0.2)
         )
-    
+
     def forward(self, x):
-        return self.ffn(x)
-        
+        return self.net(x)
+
 class Blocks(nn.Module):
     def __init__(self, n_embedding, n_head, max_sequence):
         super().__init__()
-        
-        self.multihead_att = MultiHeadAttention(n_embedding, n_head, max_sequence)
-        self.layernorm_1 = nn.LayerNorm(n_embedding)
-        self.layernorm_2 = nn.LayerNorm(n_embedding)
-        self.ffn = FeedForward(n_embedding)
-    
+        self.attention = MultiHeadAttention(n_embedding, n_head, max_sequence)
+        self.feed_forward = FeedForward(n_embedding)
+        self.layernorm1 = nn.LayerNorm(n_embedding)
+        self.layernorm2 = nn.LayerNorm(n_embedding)
+
     def forward(self, x):
-        x = self.layernorm_1(x)
-        x = x + self.multihead_att(x)
-        x = self.layernorm_2(x)
-        x = x + self.ffn(x)
+        x = x + self.attention(self.layernorm1(x))
+        x = x + self.feed_forward(self.layernorm2(x))
         return x
-        
+
 class Transformer(nn.Module):
-    '''
-    Input -> Tokenize -> Embedding vector -> positional encoding
-    
-    '''
     def __init__(self, token_size, n_embedding, max_sequence, n_layers, n_head):
         super().__init__()
-        
-        self.embedding = nn.Embedding(token_size, n_embedding)
+        self.token_embedding = nn.Embedding(token_size, n_embedding)
         self.positional_embedding = nn.Embedding(max_sequence, n_embedding)
         self.blocks = nn.Sequential(*[Blocks(n_embedding, n_head, max_sequence) for _ in range(n_layers)])
-        self.layernorm_final = nn.LayerNorm(n_embedding)
+        self.layernorm = nn.LayerNorm(n_embedding)
         self.output_head = nn.Linear(n_embedding, token_size)
-    
-    def forward(self, x_input, target):
-        logger.debug(f'{x_input.shape=}')
-        logger.debug(f'{target.shape=}')
-        B, T = x_input.shape
-        
-        embd = self.embedding(x_input)
-        pos_embed = self.positional_embedding(torch.arange(T))
-        x = embd + pos_embed
-        logger.debug('----------------------')
 
-        x = self.blocks(x)
-        logger.debug('----------------------')
-        x = self.layernorm_final(x)
-        output = self.output_head(x)
-        logger.debug(f'{output.shape=}')
+    def forward(self, x_input, target=None):
+        B, T = x_input.shape
+        token_emb = self.token_embedding(x_input)  # (B, T, C)
+        pos_emb = self.positional_embedding(torch.arange(T, device=x_input.device))  # (T, C)
+        x = token_emb + pos_emb  # Add positional embedding
+
+        x = self.blocks(x)  # Pass through the transformer layers
+        x = self.layernorm(x)
+        logits = self.output_head(x)  # Final projection
+
         if target is None:
-            loss = None
-        else:
-            logger.debug(f'Get Loss')
-            B, T, C = output.shape
-            output = output.view(B*T, C)
-            target = target.view(B*T)
-            logger.debug(f'{output.shape=} - {target.shape=}')
-            loss = F.cross_entropy(output, target)
-            logger.debug(f'{loss=}')
-        
-        return output, loss
+            return logits, None  # During inference, we return only the logits
+
+        # Compute cross-entropy loss during training
+        B, T, C = logits.shape
+        logits = logits.view(B * T, C)
+        target = target.view(B * T)
+        loss = F.cross_entropy(logits, target)
+        return logits, loss

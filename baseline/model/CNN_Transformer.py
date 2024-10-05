@@ -1,6 +1,8 @@
 import torch
 import torchvision.models as models
 import torch.nn as nn
+import numpy as np
+import sys
 
 class EncoderCNN(nn.Module):
     def __init__(self, embed_size, train_CNN=False):
@@ -32,53 +34,88 @@ class EncoderCNN(nn.Module):
         return self.dropout(self.relu(features))
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len):
+    def __init__(self, embed_size, max_len=5000):
         super(PositionalEncoding, self).__init__()
-        pe = torch.zeros(max_len, d_model)
+        self.encoding = torch.zeros(max_len, embed_size)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
+        div_term = torch.exp(torch.arange(0, embed_size, 2).float() * (-torch.log(torch.tensor(10000.0)) / embed_size))
+        self.encoding[:, 0::2] = torch.sin(position * div_term)
+        self.encoding[:, 1::2] = torch.cos(position * div_term)
+        self.encoding = self.encoding.unsqueeze(1)
 
     def forward(self, x):
-        x = x + self.pe[:, :x.size(1), :]
-        return x
+        # x shape: (seq_len, batch_size, embed_size)
+        seq_len = x.size(0)
+        return x + self.encoding[:seq_len, :].to(x.device)
     
 class DecoderTransformer(nn.Module):
-    def __init__(self, embed_size, hidden_size, vocab_size, num_layers, num_heads, max_length, device):
+    def __init__(self, embed_size, hidden_size, vocab_size, num_layers, num_heads, dropout=0.5, max_len=100):
         super(DecoderTransformer, self).__init__()
+
+        # Embedding layers for tokens and positional encoding
         self.embed = nn.Embedding(vocab_size, embed_size)
-        self.pos_encoder = PositionalEncoding(embed_size, max_length)
-        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=num_heads, dim_feedforward=hidden_size, dropout=0.5)
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.linear = nn.Linear(hidden_size, vocab_size)
-        self.dropout = nn.Dropout(0.5)
-        self.device = device
+        self.positional_encoding = nn.Embedding(max_len, embed_size)
+
+        # Transformer decoder layers
+        self.transformer_decoder_layer = nn.TransformerDecoderLayer(
+            d_model=embed_size, nhead=num_heads, dim_feedforward=hidden_size, dropout=dropout
+        )
+        self.transformer_decoder = nn.TransformerDecoder(self.transformer_decoder_layer, num_layers=num_layers)
         
-    def forward(self, features, captions):
-        B, T = captions.shape
-        pos_mask = torch.triu(torch.ones((T, T)), diagonal=1).bool().to(self.device)
-        embeddings = self.dropout(self.embed(captions))
-        embeddings = self.pos_encoder(embeddings)
-        embeddings = torch.cat((features.unsqueeze(0), embeddings), dim=0)
-        
-        outputs = self.transformer(embeddings, src_mask=pos_mask)
-        outputs = self.linear(outputs)
-        return outputs
+        # Output layer to project the output back to vocabulary size
+        self.fc_out = nn.Linear(embed_size, vocab_size)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, captions, features, tgt_mask=None):
+        # Get the shape (batch_size, seq_len)
+        batch_size, seq_len = captions.shape
+
+        # Embedding for the captions
+        embeddings = self.dropout(self.embed(captions))  # (batch_size, seq_len, embed_size)
+        print(f'{embeddings.shape=}')
+
+        # Positional encodings (need to expand across batch)
+        pos_encodings = self.positional_encoding(torch.arange(seq_len, device=features.device)).unsqueeze(0)  # (1, seq_len, embed_size)
+        print(f'{pos_encodings.shape=}')
+        embeddings += pos_encodings  # Add positional encoding to embeddings
+
+        print(f'after concat: {embeddings.shape}')
+        sys.exit(1)
+        # Expand image features to fit across sequence
+        features = features.unsqueeze(1).repeat(1, seq_len, 1)  # Repeat the image features across the sequence
+
+        # Transformer decoder forward pass
+        output = self.transformer_decoder(embeddings.transpose(0, 1), features.transpose(0, 1), tgt_mask=tgt_mask)
+        output = self.fc_out(output.transpose(0, 1))  # Project to vocabulary size
+
+        return output
         
         
 class CNNtoTransformer(nn.Module):
-    def __init__(self, embed_size, hidden_size, vocab_size, num_layers, num_heads, max_length, device):
+    def __init__(self, embed_size, hidden_size, vocab_size, num_layers, num_heads, max_sequence_length, device):
         super(CNNtoTransformer, self).__init__()
         self.encoderCNN = EncoderCNN(embed_size).to(device)
-        self.decoderTransformer = DecoderTransformer(embed_size, hidden_size, vocab_size, num_layers, num_heads, max_length, device)
+        self.decoderTransformer = DecoderTransformer(
+            embed_size=embed_size, 
+            hidden_size=hidden_size, 
+            vocab_size=vocab_size, 
+            num_layers=num_layers, 
+            num_heads=num_heads, 
+            dropout=0.5, 
+            max_len=max_sequence_length
+        ).to(device)
 
     def forward(self, images, captions):
 #         print('>>>>> CNN to Transformer <<<<<<')
         features = self.encoderCNN(images)
-        outputs = self.decoderTransformer(features, captions)
+        seq_len, batch_size = captions.shape  # seq_len = 18, batch_size = 32
+        # Expand the features to have the same sequence length as the captions
+        features = features.unsqueeze(1).repeat(1, seq_len, 1)  # Now features shape will be (32, 18, 256)
+        # Transpose captions to (batch_size, seq_len) -> (seq_len, batch_size)
+        captions = captions.transpose(0, 1)
+        print(f'{features.shape=}')
+        print(f'{captions.shape=}')
+        outputs = self.decoderTransformer(captions, features)
         return outputs
 
     def caption_image(self, image, vocabulary, max_length=50):

@@ -19,6 +19,7 @@ from torch.optim.lr_scheduler import StepLR
 
 from config.config import Config
 from model.CNN_RNN import CNNtoRNN
+from model.CNN_Transformer import CNNtoTransformer
 from dataset.flickr8k import FlickrDataset
 from utils.util import *
 from utils.evaluate import *
@@ -44,29 +45,30 @@ if __name__ == '__main__':
     dataset = FlickrDataset('/projects/bdfr/plinn/image_captioning/data/Flicker8k_Datasets', captions_file = '/projects/bdfr/plinn/image_captioning/data/Flickr8k.token.txt', transform = transform)
     vocab_size = len(dataset.vocab)
     print(f'{vocab_size=}')
-    dataloader = get_loader(dataset)
+    dataloader = get_loader(dataset, batch_size=config.batch_size)
 
     logger.debug('Loaded Dataset !')
     logger.debug(f'Train data: {dataset.__len__()}')
     logger.debug(dataset.__getitem__(0))
 
-    wandb.init(
-        project="image_captioning_CNN_RNN",
-        config={
-        "learning_rate": config.learning_rate,
-        "epochs": config.num_epochs,
-        "batch_size": 32,
-        "optimizer": "Adam",
-        "image_encoder": "ResNet50",
-        "text_decoder": "RNN",
-        "n_layers": config.num_layers,
-        "embed_size": config.embed_size,
-        "hidden_size": config.hidden_size,
-        "vocab_size": vocab_size
-        }
-    )
+    # wandb.init(
+    #     project="image_captioning_CNN_RNN",
+    #     config={
+    #     "learning_rate": config.learning_rate,
+    #     "epochs": config.num_epochs,
+    #     "batch_size": config.batch_size,
+    #     "optimizer": "Adam",
+    #     "image_encoder": "ResNet50",
+    #     "text_decoder": "Transformer",
+    #     "n_layers": config.num_layers,
+    #     "embed_size": config.embed_size,
+    #     "hidden_size": config.hidden_size,
+    #     "vocab_size": vocab_size
+    #     }
+    # )
 
-    model = CNNtoRNN(config.embed_size, config.hidden_size, vocab_size, config.num_layers).to(config.device)
+    # model = CNNtoRNN(config.embed_size, config.hidden_size, vocab_size, config.num_layers).to(config.device)
+    model = CNNtoTransformer(config.embed_size, config.hidden_size, vocab_size, config.num_layers, 2, 100, config.device)
     criterion = nn.CrossEntropyLoss(ignore_index=dataset.vocab.string_to_index["<PAD>"])
     optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
 
@@ -94,7 +96,7 @@ if __name__ == '__main__':
     model.train()
 
     best_loss = float('inf')
-    for epoch in range(config.num_epochs):
+    for epoch in range(1):
 
         total_loss = 0
 
@@ -113,7 +115,9 @@ if __name__ == '__main__':
             captions = captions.to(config.device)
 
             outputs = model(imgs, captions[:-1])
-    #         print(outputs.shape)
+            print(f'{outputs.shape=}')
+            
+            sys.exit(1)
             loss = criterion(
                 outputs.reshape(-1, outputs.shape[2]), captions.reshape(-1)
             )
@@ -128,16 +132,16 @@ if __name__ == '__main__':
                 # avg_bleu_score = compute_bleu(model, dataset)
                 # logger.info(f'Average BELU {avg_bleu_score}')
                 model.train()
-                wandb.log(
-                    {
-                        "train_loss": loss.item(), 
-                        "step": step, 
-                        "epoch": epoch+1, 
-                        "learning_rate": optimizer.param_groups[0]["lr"],
-                        # "avg_bleu_score": avg_bleu_score
-                    }
-                )
-
+                # wandb.log(
+                #     {
+                #         "train_loss": loss.item(), 
+                #         "step": step, 
+                #         "epoch": epoch+1, 
+                #         "learning_rate": optimizer.param_groups[0]["lr"],
+                #         # "avg_bleu_score": avg_bleu_score
+                #     }
+                # )
+            break
             step += 1
             
             optimizer.zero_grad()
@@ -151,5 +155,5 @@ if __name__ == '__main__':
                 best_loss = average_loss
                 torch.save(model.state_dict(), f'best_model.pth')
     
-    average_bleu = compute_bleu(model, dataset, is_last=True)
-    logger.info(f'Average BLEU : {average_bleu}')
+    # average_bleu = compute_bleu(model, dataset, is_last=True)
+    # logger.info(f'Average BLEU : {average_bleu}')

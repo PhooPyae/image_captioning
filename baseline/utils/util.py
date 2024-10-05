@@ -1,8 +1,11 @@
+import sys
+sys.path.append('/projects/bdfr/plinn/image_captioning/baseline')
+
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
-from dataset import MyCollate
+from dataset.flickr8k import MyCollate
 from PIL import Image
 import re
 
